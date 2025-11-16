@@ -15,6 +15,10 @@ cargo run -- registry enable <id>
 cargo run -- registry disable <id>
 ```
 
+> The former `fix_updater` scaffolding script has been retired. Clone this repo,
+> drop your rules and registry entries in-tree, and drive everything through the
+> `codex-patcher-updater` CLI.
+
 - `update` resets `vendor/codex`, loads the patch registry, runs ast-grep/cocci
   rules, updates registry metadata, optionally runs `cargo build --release`, and
   prints a machine-readable JSON summary with `--json`.
