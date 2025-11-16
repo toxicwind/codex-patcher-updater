@@ -26,6 +26,10 @@ cargo run -- registry disable <id>
 - `registry` commands are the single source of truth for toggling semantic patch
   sets so you never edit JSON manually.
 
+The repository already vendors upstream under `vendor/codex` via a git submodule
+pointing at `github.com/openai/codex`, so you always see the exact code the
+pipeline mutates.
+
 ## Registry + Rules
 
 - Rules live under `rules/ast-grep` and `rules/coccinelle`.
