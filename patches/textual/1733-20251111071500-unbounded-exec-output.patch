@@ -1,0 +1,98 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: toxicwind <toxicwind@gmail.com>
+Date: Tue, 11 Nov 2025 07:15:00 -0700
+Subject: feat: make exec output line cap configurable
+
+Let long-running searches dump their entire payload instead of being capped
+at 20 lines. Honor CODEX_MAX_EXEC_OUTPUT_LINES when set so CI users can
+reinstate a cap if needed.
+
+---
+ .../exec/src/event_processor_with_human_output.rs | 49 ++++++++++++++++++--
+ 1 file changed, 45 insertions(+), 4 deletions(-)
+
+diff --git a/codex-rs/exec/src/event_processor_with_human_output.rs b/codex-rs/exec/src/event_processor_with_human_output.rs
+index 93e0e493b..a90e88ee2 100644
+--- a/codex-rs/exec/src/event_processor_with_human_output.rs
++++ b/codex-rs/exec/src/event_processor_with_human_output.rs
+@@ -29,6 +29,7 @@ use owo_colors::Style;
+ use shlex::try_join;
+ use std::collections::HashMap;
+ use std::path::PathBuf;
++use std::sync::OnceLock;
+ use std::time::Instant;
+ 
+ use crate::event_processor::CodexStatus;
+@@ -38,9 +39,28 @@ use codex_common::create_config_summary_entries;
+ use codex_protocol::plan_tool::StepStatus;
+ use codex_protocol::plan_tool::UpdatePlanArgs;
+ 
+-/// This should be configurable. When used in CI, users may not want to impose
+-/// a limit so they can see the full transcript.
+-const MAX_OUTPUT_LINES_FOR_EXEC_TOOL_CALL: usize = 20;
++/// Determine the maximum number of lines captured from exec/tool output.
++/// Defaults to "no cap" unless CODEX_MAX_EXEC_OUTPUT_LINES is set to a positive
++/// integer. Setting the variable to 0 or an empty string also disables the cap.
++fn exec_output_line_cap() -> Option<usize> {
++    static LINE_CAP: OnceLock<Option<usize>> = OnceLock::new();
++    *LINE_CAP.get_or_init(|| match std::env::var("CODEX_MAX_EXEC_OUTPUT_LINES") {
++        Ok(value) => {
++            let trimmed = value.trim();
++            if trimmed.is_empty() {
++                None
++            } else {
++                match trimmed.parse::<usize>() {
++                    Ok(0) => None,
++                    Ok(num) => Some(num),
++                    Err(_) => None,
++                }
++            }
++        }
++        Err(_) => None,
++    })
++}
++
+ pub(crate) struct EventProcessorWithHumanOutput {
+     call_id_to_patch: HashMap<String, PatchApplyBegin>,
+ 
+@@ -245,11 +265,16 @@ impl EventProcessor for EventProcessorWithHumanOutput {
+             }) => {
+                 let duration = format!(" in {}", format_duration(duration));
+ 
+-                let truncated_output = aggregated_output
+-                    .lines()
+-                    .take(MAX_OUTPUT_LINES_FOR_EXEC_TOOL_CALL)
+-                    .collect::<Vec<_>>()
+-                    .join("\n");
++                let output_cap = exec_output_line_cap();
++                let truncated_output = if let Some(cap) = output_cap {
++                    aggregated_output
++                        .lines()
++                        .take(cap)
++                        .collect::<Vec<_>>()
++                        .join("\n")
++                } else {
++                    aggregated_output
++                };
+                 match exit_code {
+                     0 => {
+                         let title = format!(" succeeded{duration}:");
+@@ -298,8 +323,14 @@ impl EventProcessor for EventProcessorWithHumanOutput {
+                     let pretty =
+                         serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string());
+ 
+-                    for line in pretty.lines().take(MAX_OUTPUT_LINES_FOR_EXEC_TOOL_CALL) {
+-                        eprintln!("{}", line.style(self.dimmed));
++                    if let Some(cap) = exec_output_line_cap() {
++                        for line in pretty.lines().take(cap) {
++                            eprintln!("{}", line.style(self.dimmed));
++                        }
++                    } else {
++                        for line in pretty.lines() {
++                            eprintln!("{}", line.style(self.dimmed));
++                        }
+                     }
+                 }
+             }
+-- 
+2.47.0

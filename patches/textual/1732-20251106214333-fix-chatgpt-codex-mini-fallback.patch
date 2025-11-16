@@ -1,0 +1,161 @@
+From 6b8a8b2d60950b09b147641dc912e6976de78018 Mon Sep 17 00:00:00 2001
+From: toxicwind <toxicwind@gmail.com>
+Date: Thu, 6 Nov 2025 21:42:31 -0700
+Subject: fix: chatgpt gpt-5-codex-mini fallback
+
+
+diff --git a/codex-rs/core/src/codex.rs b/codex-rs/core/src/codex.rs
+index b2ab5c1022bc28daf160f469d4dbeaf22e733d7d..7bfb674ea2828dddd940073a9a14a14bad679c07 100644
+--- a/codex-rs/core/src/codex.rs
++++ b/codex-rs/core/src/codex.rs
+@@ -4,6 +4,7 @@ use std::path::PathBuf;
+ use std::sync::Arc;
+ use std::sync::atomic::AtomicU64;
+ 
++use crate::auth::CodexAuth;
+ use crate::AuthManager;
+ use crate::client_common::REVIEW_PROMPT;
+ use crate::features::Feature;
+@@ -18,6 +19,7 @@ use crate::user_notification::UserNotifier;
+ use crate::util::error_or_panic;
+ use async_channel::Receiver;
+ use async_channel::Sender;
++use codex_app_server_protocol::AuthMode;
+ use codex_protocol::ConversationId;
+ use codex_protocol::items::TurnItem;
+ use codex_protocol::protocol::FileChange;
+@@ -56,6 +58,7 @@ use crate::client::ModelClient;
+ use crate::client_common::Prompt;
+ use crate::client_common::ResponseEvent;
+ use crate::config::Config;
++use crate::config::GPT_5_CODEX_MEDIUM_MODEL;
+ use crate::config::types::McpServerTransportConfig;
+ use crate::config::types::ShellEnvironmentPolicy;
+ use crate::conversation_history::ConversationHistory;
+@@ -151,6 +154,31 @@ pub struct CodexSpawnOk {
+ 
+ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
+ pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 64;
++const GPT5_CODEX_MINI_MODEL: &str = "gpt-5-codex-mini";
++
++fn maybe_override_chatgpt_model(
++    model: &mut String,
++    auth: Option<CodexAuth>,
++) -> Option<DeprecationNoticeEvent> {
++    let auth = auth?;
++    if auth.mode != AuthMode::ChatGPT {
++        return None;
++    }
++    if model != GPT5_CODEX_MINI_MODEL {
++        return None;
++    }
++
++    *model = GPT_5_CODEX_MEDIUM_MODEL.to_string();
++    let summary = format!(
++        "ChatGPT logins cannot use {GPT5_CODEX_MINI_MODEL}; using {GPT_5_CODEX_MEDIUM_MODEL} instead."
++    );
++    let details = Some(
++        "Use an API key with codex-mini access (or a workspace plan that explicitly enables it) \
++         if you need the smaller model."
++            .to_string(),
++    );
++    Some(DeprecationNoticeEvent { summary, details })
++}
+ 
+ impl Codex {
+     /// Spawn a new [`Codex`] and initialize the session.
+@@ -167,7 +195,7 @@ impl Codex {
+ 
+         let config = Arc::new(config);
+ 
+-        let session_configuration = SessionConfiguration {
++        let mut session_configuration = SessionConfiguration {
+             provider: config.model_provider.clone(),
+             model: config.model.clone(),
+             model_reasoning_effort: config.model_reasoning_effort,
+@@ -183,6 +211,15 @@ impl Codex {
+             features: config.features.clone(),
+             session_source,
+         };
++        let mut config_notices: Vec<Event> = Vec::new();
++        if let Some(notice) =
++            maybe_override_chatgpt_model(&mut session_configuration.model, auth_manager.auth())
++        {
++            config_notices.push(Event {
++                id: INITIAL_SUBMIT_ID.to_owned(),
++                msg: EventMsg::DeprecationNotice(notice),
++            });
++        }
+ 
+         // Generate a unique ID for the lifetime of this Codex session.
+         let session_source_clone = session_configuration.session_source.clone();
+@@ -201,6 +238,13 @@ impl Codex {
+         })?;
+         let conversation_id = session.conversation_id;
+ 
++        for event in config_notices {
++            tx_event
++                .send(event)
++                .await
++                .map_err(|_| CodexErr::InternalAgentDied)?;
++        }
++
+         // This task will run until Op::Shutdown is received.
+         tokio::spawn(submission_loop(session, config, rx_sub));
+         let codex = Codex {
+@@ -708,12 +752,24 @@ impl Session {
+         sub_id: String,
+         updates: SessionSettingsUpdate,
+     ) -> Arc<TurnContext> {
+-        let session_configuration = {
++        let auth_snapshot = self.services.auth_manager.auth();
++        let (session_configuration, override_notice) = {
+             let mut state = self.state.lock().await;
+-            let session_configuration = state.session_configuration.clone().apply(&updates);
++            let mut session_configuration = state.session_configuration.clone().apply(&updates);
++            let override_notice =
++                maybe_override_chatgpt_model(&mut session_configuration.model, auth_snapshot.clone());
+             state.session_configuration = session_configuration.clone();
+-            session_configuration
++            (session_configuration, override_notice)
+         };
++        if let Some(notice) = override_notice {
++            let _ = self
++                .tx_event
++                .send(Event {
++                    id: INITIAL_SUBMIT_ID.to_owned(),
++                    msg: EventMsg::DeprecationNotice(notice),
++                })
++                .await;
++        }
+ 
+         let mut turn_context: TurnContext = Self::make_turn_context(
+             Some(Arc::clone(&self.services.auth_manager)),
+@@ -2347,6 +2403,27 @@ mod tests {
+         assert_eq!(expected, reconstructed);
+     }
+ 
++    #[test]
++    fn chatgpt_auth_overrides_codex_mini() {
++        let mut model = GPT5_CODEX_MINI_MODEL.to_string();
++        let notice = maybe_override_chatgpt_model(
++            &mut model,
++            Some(CodexAuth::create_dummy_chatgpt_auth_for_testing()),
++        )
++        .expect("should emit notice");
++        assert_eq!(model, GPT_5_CODEX_MEDIUM_MODEL);
++        assert!(notice.summary.contains(GPT5_CODEX_MINI_MODEL));
++    }
++
++    #[test]
++    fn api_key_auth_preserves_codex_mini() {
++        let mut model = GPT5_CODEX_MINI_MODEL.to_string();
++        let auth = CodexAuth::from_api_key("test");
++        let notice = maybe_override_chatgpt_model(&mut model, Some(auth));
++        assert!(notice.is_none());
++        assert_eq!(model, GPT5_CODEX_MINI_MODEL);
++    }
++
+     #[test]
+     fn record_initial_history_reconstructs_resumed_transcript() {
+         let (session, turn_context) = make_session_and_context();

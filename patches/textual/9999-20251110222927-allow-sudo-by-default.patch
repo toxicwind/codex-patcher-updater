@@ -1,0 +1,14 @@
+diff --git a/codex b/codex
+index 1387a1d..7feccd6 100755
+--- a/codex
++++ b/codex
+@@ -271,7 +271,8 @@ main() {
+     run_update=1
+   fi
+ 
+-  if [[ ${CODEX_WRAPPER_ALLOW_SUDO:-0} != 1 ]]; then
++  allow_sudo="${CODEX_WRAPPER_ALLOW_SUDO:-1}"
++  if [[ $allow_sudo != 1 ]]; then
+     updater_args+=(--no-sudo)
+   fi
+ 

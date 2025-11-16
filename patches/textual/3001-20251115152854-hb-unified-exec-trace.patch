@@ -1,0 +1,128 @@
+From 4c46617aa5ef6eb12b5432eb021f6b0e63c3e79d Mon Sep 17 00:00:00 2001
+From: toxicwind <toxicwind@gmail.com>
+Date: Sat, 15 Nov 2025 15:41:50 -0700
+Subject: feat: hb unified exec trace logging
+
+
+diff --git a/codex-rs/core/src/unified_exec/mod.rs b/codex-rs/core/src/unified_exec/mod.rs
+index a1e2c0c4448ca42aafe3405abf5733317e3591d7..d764a455a9b182807bbe5a8b975599beaef0abcb 100644
+--- a/codex-rs/core/src/unified_exec/mod.rs
++++ b/codex-rs/core/src/unified_exec/mod.rs
+@@ -22,14 +22,20 @@
+ //! - `session_manager.rs`: orchestration (approvals, sandboxing, reuse) and request handling.
+ 
+ use std::collections::HashMap;
+-use std::path::PathBuf;
++use std::env;
++use std::fs::OpenOptions;
++use std::io::Write;
++use std::path::{Path, PathBuf};
+ use std::sync::Arc;
++use std::sync::OnceLock;
+ use std::sync::atomic::AtomicI32;
+-use std::time::Duration;
++use std::time::{Duration, SystemTime, UNIX_EPOCH};
+ 
+ use rand::Rng;
+ use rand::rng;
++use serde_json::json;
+ use tokio::sync::Mutex;
++use tracing::warn;
+ 
+ use crate::codex::Session;
+ use crate::codex::TurnContext;
+@@ -47,6 +53,8 @@ pub(crate) const MAX_YIELD_TIME_MS: u64 = 30_000;
+ pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: usize = 10_000;
+ pub(crate) const UNIFIED_EXEC_OUTPUT_MAX_BYTES: usize = 1024 * 1024; // 1 MiB
+ 
++static TRACE_FILE_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
++
+ pub(crate) struct UnifiedExecContext {
+     pub session: Arc<Session>,
+     pub turn: Arc<TurnContext>,
+@@ -156,6 +164,55 @@ pub(crate) fn truncate_output_to_tokens(
+     (truncated_output, Some(total_tokens))
+ }
+ 
++fn trace_file_path() -> Option<&'static PathBuf> {
++    TRACE_FILE_PATH
++        .get_or_init(|| match env::var_os("HB_CODEX_TRACE_DIR") {
++            Some(path) if !path.is_empty() => {
++                let dir = PathBuf::from(path);
++                if let Err(err) = std::fs::create_dir_all(&dir) {
++                    warn!(?err, path = %dir.display(), "failed to create HB_CODEX_TRACE_DIR");
++                    return None;
++                }
++                Some(dir.join("unified-exec.log"))
++            }
++            _ => None,
++        })
++        .as_ref()
++}
++
++fn log_unified_exec_chunk(kind: &str, response: &UnifiedExecResponse) {
++    let Some(path) = trace_file_path() else {
++        return;
++    };
++
++    let timestamp = SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .unwrap_or_default()
++        .as_secs_f64();
++
++    let payload = json!({
++        "ts": timestamp,
++        "kind": kind,
++        "call_id": response.event_call_id,
++        "chunk_id": response.chunk_id,
++        "session_id": response.session_id,
++        "exit_code": response.exit_code,
++        "tokens": response.original_token_count,
++        "pending": response.session_id.is_some() && response.exit_code.is_none(),
++        "output": response.output,
++    });
++
++    if let Err(err) = append_json_line(path, payload.to_string()) {
++        warn!(?err, path = %path.display(), "failed to append unified exec trace entry");
++    }
++}
++
++fn append_json_line(path: &Path, line: String) -> std::io::Result<()> {
++    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
++    file.write_all(line.as_bytes())?;
++    file.write_all(b"\n")
++}
++
+ #[cfg(test)]
+ #[cfg(unix)]
+ mod tests {
+diff --git a/codex-rs/core/src/unified_exec/session_manager.rs b/codex-rs/core/src/unified_exec/session_manager.rs
+index 7f4727d0c9addce1c1b4ec4fae2891c4863dc630..4c09c180c6fc76fd2d1452406fc8de9b519564f8 100644
+--- a/codex-rs/core/src/unified_exec/session_manager.rs
++++ b/codex-rs/core/src/unified_exec/session_manager.rs
+@@ -27,6 +27,7 @@ use super::UnifiedExecSessionManager;
+ use super::WriteStdinRequest;
+ use super::clamp_yield_time;
+ use super::generate_chunk_id;
++use super::log_unified_exec_chunk;
+ use super::resolve_max_tokens;
+ use super::session::OutputBuffer;
+ use super::session::UnifiedExecSession;
+@@ -81,6 +82,8 @@ impl UnifiedExecSessionManager {
+             original_token_count,
+         };
+ 
++        log_unified_exec_chunk("exec_command", &response);
++
+         // If the command completed during this call, emit an ExecCommandEnd via the emitter.
+         if response.session_id.is_none() {
+             let exit = response.exit_code.unwrap_or(-1);
+@@ -147,6 +150,8 @@ impl UnifiedExecSessionManager {
+             original_token_count,
+         };
+ 
++        log_unified_exec_chunk("write_stdin", &response);
++
+         if let (Some(exit), Some(entry)) = (response.exit_code, completion_entry) {
+             let total_duration = Instant::now().saturating_duration_since(entry.started_at);
+             Self::emit_exec_end_from_entry(entry, response.output.clone(), exit, total_duration)

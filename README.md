@@ -43,7 +43,9 @@ pipeline mutates.
 1. **ast-grep** – Syntax-aware rewrites with dry-run metrics before applying.
 2. **coccinelle-for-rust** – Type-aware patches for the gnarliest codex tweaks;
    optional and auto-skipped when the binary is missing.
-3. **Future** – Placeholder for GritQL or other semantic engines; CLI already has
+3. **git patch** – Legacy `.patch` files applied via `git apply --3way`, so your
+   existing `patches/local/*.patch` queue keeps working during the transition.
+4. **Future** – Placeholder for GritQL or other semantic engines; CLI already has
    knobs to disable/enable engines per run.
 
 The update pipeline always prefers graceful degradation: if a rule stops

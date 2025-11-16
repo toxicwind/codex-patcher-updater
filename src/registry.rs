@@ -13,6 +13,7 @@ pub enum EngineKind {
     AstGrep,
     Coccinelle,
     GritQl,
+    Patch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

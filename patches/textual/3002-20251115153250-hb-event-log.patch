@@ -1,0 +1,103 @@
+From 8ad57c2715b66546be7c9e7c03181a71c074af67 Mon Sep 17 00:00:00 2001
+From: toxicwind <toxicwind@gmail.com>
+Date: Sat, 15 Nov 2025 15:42:30 -0700
+Subject: feat: hb event log stream
+
+
+diff --git a/codex-rs/core/src/codex.rs b/codex-rs/core/src/codex.rs
+index 7bfb674ea2828dddd940073a9a14a14bad679c07..f545fd5806a2c6f1ade8f261ca5d945c8e90174a 100644
+--- a/codex-rs/core/src/codex.rs
++++ b/codex-rs/core/src/codex.rs
+@@ -1,11 +1,16 @@
+ use std::collections::HashMap;
++use std::env;
+ use std::fmt::Debug;
+-use std::path::PathBuf;
++use std::fs::OpenOptions;
++use std::io::Write;
++use std::path::{Path, PathBuf};
+ use std::sync::Arc;
++use std::sync::OnceLock;
+ use std::sync::atomic::AtomicU64;
++use std::time::{SystemTime, UNIX_EPOCH};
+ 
+-use crate::auth::CodexAuth;
+ use crate::AuthManager;
++use crate::auth::CodexAuth;
+ use crate::client_common::REVIEW_PROMPT;
+ use crate::features::Feature;
+ use crate::function_tool::FunctionCallError;
+@@ -53,6 +58,52 @@ use tracing::error;
+ use tracing::info;
+ use tracing::warn;
+ 
++static EVENT_TRACE_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
++
++fn event_trace_path() -> Option<&'static PathBuf> {
++    EVENT_TRACE_PATH
++        .get_or_init(|| match env::var_os("HB_CODEX_EVENT_LOG") {
++            Some(path) if !path.is_empty() => {
++                let file = PathBuf::from(path);
++                if let Some(parent) = file.parent() {
++                    if let Err(err) = std::fs::create_dir_all(parent) {
++                        warn!(?err, path = %parent.display(), "failed to create HB_CODEX_EVENT_LOG parent");
++                        return None;
++                    }
++                }
++                Some(file)
++            }
++            _ => None,
++        })
++        .as_ref()
++}
++
++fn log_event_for_hypebrut(event: &Event) {
++    let Some(path) = event_trace_path() else {
++        return;
++    };
++
++    let timestamp = SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .unwrap_or_default()
++        .as_secs_f64();
++
++    let payload = serde_json::json!({
++        "ts": timestamp,
++        "event": event,
++    });
++
++    if let Err(err) = append_event_line(path, payload.to_string()) {
++        warn!(?err, path = %path.display(), "failed to append HB_CODEX_EVENT_LOG entry");
++    }
++}
++
++fn append_event_line(path: &Path, line: String) -> std::io::Result<()> {
++    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
++    file.write_all(line.as_bytes())?;
++    file.write_all(b"\n")
++}
++
+ use crate::ModelProviderInfo;
+ use crate::client::ModelClient;
+ use crate::client_common::Prompt;
+@@ -756,8 +807,10 @@ impl Session {
+         let (session_configuration, override_notice) = {
+             let mut state = self.state.lock().await;
+             let mut session_configuration = state.session_configuration.clone().apply(&updates);
+-            let override_notice =
+-                maybe_override_chatgpt_model(&mut session_configuration.model, auth_snapshot.clone());
++            let override_notice = maybe_override_chatgpt_model(
++                &mut session_configuration.model,
++                auth_snapshot.clone(),
++            );
+             state.session_configuration = session_configuration.clone();
+             (session_configuration, override_notice)
+         };
+@@ -823,6 +876,7 @@ impl Session {
+     }
+ 
+     pub(crate) async fn send_event_raw(&self, event: Event) {
++        log_event_for_hypebrut(&event);
+         // Persist the event into rollout (recorder filters as needed)
+         let rollout_items = vec![RolloutItem::EventMsg(event.msg.clone())];
+         self.persist_rollout_items(&rollout_items).await;

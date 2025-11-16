@@ -248,6 +248,7 @@ fn engine_allowed(cfg: &Config, engine: &EngineKind) -> bool {
         EngineKind::AstGrep => cfg.enable_ast_grep,
         EngineKind::Coccinelle => cfg.enable_coccinelle,
         EngineKind::GritQl => cfg.enable_gritql,
+        EngineKind::Patch => true,
     }
 }
 

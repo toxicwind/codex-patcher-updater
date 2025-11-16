@@ -10,11 +10,7 @@
       "rules": [
         "rules/ast-grep/rust/increase_max_output_tokens.yml"
       ],
-      "tags": [
-        "tokens",
-        "limits",
-        "unified_exec"
-      ],
+      "tags": ["tokens", "limits", "unified_exec"],
       "engine_confidence": 0.92,
       "last_applied_commit": null,
       "last_match_count": null,
@@ -29,16 +25,62 @@
       "rules": [
         "rules/ast-grep/rust/log_small_commands.yml"
       ],
-      "tags": [
-        "logging",
-        "parsing",
-        "telemetry"
-      ],
+      "tags": ["logging", "parsing", "telemetry"],
       "engine_confidence": 0.9,
       "last_applied_commit": null,
       "last_match_count": null,
       "last_status": null,
       "last_run_ts": null
+    },
+    {
+      "id": "patch:1732-fix-chatgpt-codex-mini-fallback",
+      "description": "Legacy patch: ensure chatgpt fallback honors gpt-5-codex-mini.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/1732-20251106214333-fix-chatgpt-codex-mini-fallback.patch"
+      ],
+      "tags": ["chatgpt", "fallback"]
+    },
+    {
+      "id": "patch:1733-unbounded-exec-output",
+      "description": "Legacy patch: raise exec output limits from patches/local queue.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/1733-20251111071500-unbounded-exec-output.patch"
+      ],
+      "tags": ["unified_exec", "limits"]
+    },
+    {
+      "id": "patch:3001-hb-unified-exec-trace",
+      "description": "Legacy patch: extra tracing in hb unified exec paths.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/3001-20251115152854-hb-unified-exec-trace.patch"
+      ],
+      "tags": ["telemetry", "unified_exec"]
+    },
+    {
+      "id": "patch:3002-hb-event-log",
+      "description": "Legacy patch: extended event logging from hb stack.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/3002-20251115153250-hb-event-log.patch"
+      ],
+      "tags": ["logging"]
+    },
+    {
+      "id": "patch:9999-allow-sudo-by-default",
+      "description": "Legacy patch: default allow sudo in updater.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/9999-20251110222927-allow-sudo-by-default.patch"
+      ],
+      "tags": ["sudo", "bootstrap"]
     }
   ]
 }
