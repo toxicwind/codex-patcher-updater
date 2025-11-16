@@ -1,0 +1,26 @@
+version = 1
+
+[vendor]
+# Path to the vendored codex repo, relative to workspace root
+root = "vendor/codex"
+branch = "main"
+
+[tools]
+# ast-grep binary; set to "sg" if you prefer the short alias
+ast_grep = "ast-grep"
+# Optional: coccinelle-for-rust binary, if installed
+coccinelle = "coccinelle-for-rust"
+
+[patch_registry]
+# Where to store patch-set state
+path = "patch-registry/registry.json"
+
+[patches]
+# Root directory containing rule files for all engines
+rules_root = "rules"
+
+[engines]
+# Enable/disable engines globally
+ast_grep = true
+coccinelle = false
+gritql = false

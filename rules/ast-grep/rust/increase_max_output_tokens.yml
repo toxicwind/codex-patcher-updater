@@ -1,0 +1,5 @@
+id: increase-max-output-tokens
+language: rust
+rule:
+  pattern: const DEFAULT_MAX_OUTPUT_TOKENS: usize = $OLD
+fix: const DEFAULT_MAX_OUTPUT_TOKENS: usize = 100_000

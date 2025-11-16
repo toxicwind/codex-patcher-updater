@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "generated_by": "codex-patcher-updater 0.5.0",
+  "patch_sets": [
+    {
+      "id": "astgrep:increase-max-output-tokens",
+      "description": "Bump DEFAULT_MAX_OUTPUT_TOKENS to a higher ceiling for unified exec.",
+      "engine": "ast_grep",
+      "enabled": true,
+      "rules": [
+        "rules/ast-grep/rust/increase_max_output_tokens.yml"
+      ],
+      "tags": [
+        "tokens",
+        "limits",
+        "unified_exec"
+      ],
+      "engine_confidence": 0.92,
+      "last_applied_commit": null,
+      "last_match_count": null,
+      "last_status": null,
+      "last_run_ts": null
+    },
+    {
+      "id": "astgrep:force-log-all-small-commands",
+      "description": "Make is_small_formatting_command conservative so small commands still surface for logging.",
+      "engine": "ast_grep",
+      "enabled": true,
+      "rules": [
+        "rules/ast-grep/rust/log_small_commands.yml"
+      ],
+      "tags": [
+        "logging",
+        "parsing",
+        "telemetry"
+      ],
+      "engine_confidence": 0.9,
+      "last_applied_commit": null,
+      "last_match_count": null,
+      "last_status": null,
+      "last_run_ts": null
+    }
+  ]
+}

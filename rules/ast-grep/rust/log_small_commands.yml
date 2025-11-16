@@ -1,0 +1,11 @@
+id: force-log-all-small-commands
+language: rust
+rule:
+  pattern: |
+    fn is_small_formatting_command($CMD: &str) -> bool {
+        $BODY
+    }
+fix: |
+    fn is_small_formatting_command(_cmd: &str) -> bool {
+        false
+    }
