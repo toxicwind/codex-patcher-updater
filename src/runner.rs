@@ -6,7 +6,10 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::engines;
-use crate::process::{cargo_build_release, git_head_commit, git_reset_to_branch, require_tool};
+use crate::process::{
+    cargo_build_release, git_current_branch, git_divergence, git_fetch_remote, git_head_commit,
+    git_is_clean, git_merge_ff_only, git_reset_to_branch, require_tool,
+};
 use crate::registry::{EngineKind, PatchRegistry, PatchSet};
 
 #[derive(Debug, Clone)]
@@ -194,8 +197,20 @@ pub fn run_update(root: &Path, opts: UpdateOptions) -> Result<()> {
     println!("  vendor dir    : {}", vendor_dir.display());
     println!("  dry-run       : {}", opts.dry_run);
 
-    println!("Step 1/4: Reset vendor to origin/{}...", cfg.vendor_branch);
-    git_reset_to_branch(&vendor_dir, &cfg.vendor_branch)?;
+    if cfg.fork.enabled {
+        println!(
+            "Step 1/4: Fork sync checks (local {} -> {}, upstream {} -> {})...",
+            cfg.fork.local_remote,
+            cfg.fork.local_branch,
+            cfg.fork.upstream_remote,
+            cfg.fork.upstream_branch
+        );
+        let mut fork_warnings = ensure_fork_state(&cfg, &vendor_dir)?;
+        summary.warnings.append(&mut fork_warnings);
+    } else {
+        println!("Step 1/4: Reset vendor to origin/{}...", cfg.vendor_branch);
+        git_reset_to_branch(&vendor_dir, &cfg.vendor_branch)?;
+    }
     let commit = git_head_commit(&vendor_dir)?;
     summary.vendor_head_after = Some(commit.clone());
 
@@ -305,4 +320,89 @@ fn count_files(dir: PathBuf, exts: &[&str]) -> usize {
                 .unwrap_or(false)
         })
         .count()
+}
+
+fn ensure_fork_state(cfg: &Config, vendor_dir: &Path) -> Result<Vec<String>> {
+    let fork_cfg = &cfg.fork;
+    let mut warnings = Vec::new();
+
+    let branch = git_current_branch(vendor_dir)?;
+    if branch != fork_cfg.local_branch {
+        return Err(anyhow!(
+            "Fork mode requires branch {} but the repo is currently on {}. Checkout {} before running the updater.",
+            fork_cfg.local_branch,
+            branch,
+            fork_cfg.local_branch
+        ));
+    }
+
+    if fork_cfg.require_clean_worktree && !git_is_clean(vendor_dir)? {
+        return Err(anyhow!(
+            "Vendor repo has local modifications. Commit, stash, or clean the tree before running the updater in fork mode."
+        ));
+    }
+
+    git_fetch_remote(vendor_dir, &fork_cfg.local_remote)?;
+    let needs_upstream_fetch = fork_cfg.upstream_remote != fork_cfg.local_remote
+        || fork_cfg.upstream_branch != fork_cfg.local_branch;
+    if needs_upstream_fetch {
+        git_fetch_remote(vendor_dir, &fork_cfg.upstream_remote)?;
+    }
+
+    let tracking_ref = format!("{}/{}", fork_cfg.local_remote, fork_cfg.local_branch);
+    match git_divergence(vendor_dir, "HEAD", &tracking_ref) {
+        Ok((ahead, behind)) => {
+            if behind > 0 {
+                let msg = format!(
+                    "{} is ahead by {behind} commit(s). Pull or merge `{}` before running the updater.",
+                    tracking_ref, tracking_ref
+                );
+                if fork_cfg.abort_on_divergence {
+                    return Err(anyhow!(msg));
+                } else {
+                    warnings.push(msg);
+                }
+            }
+            if ahead > 0 {
+                warnings.push(format!(
+                    "Local branch is ahead of {tracking_ref} by {ahead} commit(s); remember to push after the run."
+                ));
+            }
+        }
+        Err(err) => warnings.push(format!(
+            "Unable to compute divergence against {tracking_ref}: {err}"
+        )),
+    }
+
+    let upstream_ref = format!("{}/{}", fork_cfg.upstream_remote, fork_cfg.upstream_branch);
+    match git_divergence(vendor_dir, "HEAD", &upstream_ref) {
+        Ok((ahead, behind)) => {
+            if ahead > 0 {
+                warnings.push(format!(
+                    "Local branch carries {ahead} commit(s) not yet in {upstream_ref}."
+                ));
+            }
+            if behind > 0 {
+                if fork_cfg.auto_merge_upstream {
+                    git_merge_ff_only(vendor_dir, &upstream_ref)?;
+                    warnings.push(format!(
+                        "Fast-forwarded to {upstream_ref} ({behind} commit(s))."
+                    ));
+                } else if fork_cfg.abort_on_divergence {
+                    return Err(anyhow!(
+                        "{upstream_ref} has {behind} commit(s) you still need to merge. Run `git merge {upstream_ref}` first or enable auto_merge_upstream."
+                    ));
+                } else {
+                    warnings.push(format!(
+                        "{upstream_ref} is ahead by {behind} commit(s); merge it before pushing."
+                    ));
+                }
+            }
+        }
+        Err(err) => warnings.push(format!(
+            "Unable to compute divergence against {upstream_ref}: {err}"
+        )),
+    }
+
+    Ok(warnings)
 }

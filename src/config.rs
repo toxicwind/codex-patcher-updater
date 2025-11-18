@@ -34,6 +34,26 @@ pub struct PatchesSection {
 }
 
 #[derive(Debug, Deserialize, Default)]
+pub struct ForkSection {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub upstream_remote: Option<String>,
+    #[serde(default)]
+    pub upstream_branch: Option<String>,
+    #[serde(default)]
+    pub local_remote: Option<String>,
+    #[serde(default)]
+    pub local_branch: Option<String>,
+    #[serde(default)]
+    pub require_clean_worktree: Option<bool>,
+    #[serde(default)]
+    pub abort_on_divergence: Option<bool>,
+    #[serde(default)]
+    pub auto_merge_upstream: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
 pub struct EnginesSection {
     #[serde(default)]
     pub ast_grep: Option<bool>,
@@ -54,6 +74,8 @@ pub struct RawConfig {
     #[serde(default)]
     pub patches: PatchesSection,
     #[serde(default)]
+    pub fork: ForkSection,
+    #[serde(default)]
     pub engines: EnginesSection,
 }
 
@@ -68,6 +90,19 @@ pub struct Config {
     pub enable_gritql: bool,
     pub patch_registry_path: String,
     pub rules_root: String,
+    pub fork: ForkConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForkConfig {
+    pub enabled: bool,
+    pub upstream_remote: String,
+    pub upstream_branch: String,
+    pub local_remote: String,
+    pub local_branch: String,
+    pub require_clean_worktree: bool,
+    pub abort_on_divergence: bool,
+    pub auto_merge_upstream: bool,
 }
 
 impl Config {
@@ -100,6 +135,8 @@ impl Config {
         let enable_coccinelle = raw.engines.coccinelle.unwrap_or(false);
         let enable_gritql = raw.engines.gritql.unwrap_or(false);
 
+        let fork = ForkConfig::from_section(&raw.fork, &vendor_branch);
+
         Ok(Config {
             vendor_root,
             vendor_branch,
@@ -110,6 +147,7 @@ impl Config {
             enable_gritql,
             patch_registry_path,
             rules_root,
+            fork,
         })
     }
 
@@ -123,5 +161,32 @@ impl Config {
 
     pub fn rules_root_path(&self, root: &Path) -> PathBuf {
         root.join(&self.rules_root)
+    }
+}
+
+impl ForkConfig {
+    fn from_section(section: &ForkSection, vendor_branch: &str) -> Self {
+        Self {
+            enabled: section.enabled.unwrap_or(false),
+            upstream_remote: section
+                .upstream_remote
+                .clone()
+                .unwrap_or_else(|| "upstream".to_string()),
+            upstream_branch: section
+                .upstream_branch
+                .clone()
+                .unwrap_or_else(|| vendor_branch.to_string()),
+            local_remote: section
+                .local_remote
+                .clone()
+                .unwrap_or_else(|| "origin".to_string()),
+            local_branch: section
+                .local_branch
+                .clone()
+                .unwrap_or_else(|| vendor_branch.to_string()),
+            require_clean_worktree: section.require_clean_worktree.unwrap_or(true),
+            abort_on_divergence: section.abort_on_divergence.unwrap_or(true),
+            auto_merge_upstream: section.auto_merge_upstream.unwrap_or(false),
+        }
     }
 }

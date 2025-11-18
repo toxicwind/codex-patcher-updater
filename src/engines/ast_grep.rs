@@ -36,10 +36,12 @@ pub fn apply(
         let rule_abs = if rule_path.is_absolute() {
             rule_path
         } else {
-            // Treat rule paths as relative to workspace root
-            // (vendor_dir is usually vendor/codex, so we go one level up)
-            let root = vendor_dir.parent().unwrap_or(vendor_dir);
-            root.join(rule_path)
+            // Treat rule paths as relative to the workspace root (two levels above vendor/codex)
+            let workspace_root = vendor_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or(vendor_dir);
+            workspace_root.join(rule_path)
         };
 
         let mut args = vec!["scan", "--rule", rule_abs.to_str().unwrap()];

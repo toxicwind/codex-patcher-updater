@@ -13,6 +13,7 @@ pub enum EngineKind {
     AstGrep,
     Coccinelle,
     GritQl,
+    #[serde(alias = "patch")]
     Patch,
 }
 

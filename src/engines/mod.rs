@@ -42,10 +42,14 @@ pub fn apply_patchset(
                 status: "skipped: gritql engine not implemented".to_string(),
             })
         }
-        EngineKind::Patch => patch::apply(patch, vendor_dir, dry_run),
+        EngineKind::Patch => {
+            Ok(EngineResult {
+                matches: None,
+                status: "skipped: patch engine retired".to_string(),
+            })
+        }
     }
 }
 
 pub mod ast_grep;
 pub mod coccinelle;
-pub mod patch;

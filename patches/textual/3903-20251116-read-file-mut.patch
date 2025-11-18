@@ -1,0 +1,27 @@
+diff --git a/codex-rs/core/src/tools/handlers/read_file.rs b/codex-rs/core/src/tools/handlers/read_file.rs
+index 58b6ea68..13e707fa 100644
+--- a/codex-rs/core/src/tools/handlers/read_file.rs
++++ b/codex-rs/core/src/tools/handlers/read_file.rs
+@@ -113,13 +113,13 @@ impl ToolHandler for ReadFileHandler {
+             ))
+         })?;
+ 
+-        let ReadFileArgs {
+-            file_path,
+-            offset,
+-            limit,
+-            mode,
+-            indentation,
+-        } = args;
++        let ReadFileArgs {
++            mut file_path,
++            mut offset,
++            mut limit,
++            mut mode,
++            mut indentation,
++        } = args;
+ 
+         if offset == 0 {
+             return Err(FunctionCallError::RespondToModel(
+                 "offset must be a 1-indexed line number".to_string(),
+             ));

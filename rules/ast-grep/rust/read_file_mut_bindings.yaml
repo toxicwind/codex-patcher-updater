@@ -1,0 +1,22 @@
+id: read-file-mut-bindings
+language: Rust
+rule:
+  pattern: |
+    let ReadFileArgs {
+        file_path,
+        offset,
+        limit,
+        mode,
+        indentation,
+    } = $ARGS;
+fix: |
+  let ReadFileArgs {
+      mut file_path,
+      mut offset,
+      mut limit,
+      mut mode,
+      mut indentation,
+  } = $ARGS;
+message: "ensure read_file destructuring uses mutable fields"
+severity: warning
+scope: source

@@ -30,6 +30,25 @@ The repository already vendors upstream under `vendor/codex` via a git submodule
 pointing at `github.com/openai/codex`, so you always see the exact code the
 pipeline mutates.
 
+## Fork-Aware Mode
+
+When you need to keep long-lived patches in `vendor/codex`, enable the `[fork]`
+section inside `codex-patcher-updater.toml`. In this mode the updater:
+
+- Verifies you are on the configured writable branch (default `origin/main`),
+  checks for a clean working tree, and fetches both your fork and upstream
+  remotes.
+- Computes divergence against your fork (`local_remote/local_branch`) and the
+  upstream remote so you get explicit warnings (or hard failures) when either
+  side is ahead.
+- Skips the destructive `git reset --hard origin/<branch>` stage so your local
+  commits stay intact, optionally fast-forwarding to upstream automatically when
+  `auto_merge_upstream = true`.
+
+This turns `codex-patcher-updater` into a thin “fork holder”: it helps you keep
+an up-to-date fork while still running semantic patches, and it nudges you to
+merge/push before the pipeline drifts too far.
+
 ## Registry + Rules
 
 - Rules live under `rules/ast-grep` and `rules/coccinelle`.

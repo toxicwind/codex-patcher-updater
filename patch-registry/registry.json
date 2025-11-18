@@ -81,6 +81,16 @@
         "patches/textual/9999-20251110222927-allow-sudo-by-default.patch"
       ],
       "tags": ["sudo", "bootstrap"]
+    },
+    {
+      "id": "patch:3903-read-file-mut-bindings",
+      "description": "Legacy patch: fix read_file handler destructuring to use mutable bindings.",
+      "engine": "patch",
+      "enabled": true,
+      "rules": [
+        "patches/textual/3903-20251116-read-file-mut.patch"
+      ],
+      "tags": ["read_file", "compiler"]
     }
   ]
 }

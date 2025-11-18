@@ -24,3 +24,19 @@ rules_root = "rules"
 ast_grep = true
 coccinelle = false
 gritql = false
+
+[fork]
+# Treat vendor/codex as a fork instead of hard-resetting every run
+enabled = false
+# Remote/branch that tracks your writable fork
+local_remote = "origin"
+local_branch = "main"
+# Remote/branch that represents upstream; fetch-only by default
+upstream_remote = "upstream"
+upstream_branch = "main"
+# Require clean working tree before modifying anything
+require_clean_worktree = true
+# Abort (instead of warn) when upstream/local remotes are ahead
+abort_on_divergence = true
+# When true, automatically fast-forward to upstream if safe
+auto_merge_upstream = false
