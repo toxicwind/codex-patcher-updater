@@ -3,7 +3,7 @@
 <div align="right">
 
 [![rust](https://img.shields.io/badge/rust-nightly-orange?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](#license)
 [![status](https://img.shields.io/badge/status-retired-red?style=for-the-badge)](#-retired)
 
 </div>
@@ -149,7 +149,7 @@ will show you exactly what it matches before anything is written.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — declared in [Cargo.toml](Cargo.toml); no standalone LICENSE file is present in the tree.
 
 ## Security
 
