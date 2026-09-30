@@ -1,95 +1,161 @@
-# Codex Forksmith (Retired)
+# codex-patcher-updater
 
-> **Important:** Active development now lives in the standalone
-> [codex-forksmith](https://github.com/toxicwind/codex-forksmith) repo. This
-> tree is frozen, archived at `~/backups/old-codex-patcher-updater-20251119-145847.zip`,
-> and kept only for historical reference.
+<div align="right">
 
-A Rust-native fork steward for `vendor/codex`. The new `codex-forksmith`
-binary manages git status, syncing, builds, and execution of the vendored
-Codex workspace so you can treat this repo as a turnkey fork manager.
+[![rust](https://img.shields.io/badge/rust-nightly-orange?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+[![status](https://img.shields.io/badge/status-retired-red?style=for-the-badge)](#-retired)
+
+</div>
+
+> **⚠️ Retired.** Active development now lives in the standalone
+> [**codex-forksmith**](https://github.com/toxicwind/codex-forksmith) repo
+> (*"Rust control plane for the vendored Codex workspace — inspect, sync,
+> build, exec."*). This tree is frozen and kept only for historical reference.
+
+**codex-patcher-updater** was the Rust-native patch-and-update pipeline for a
+vendored [openai/codex](https://github.com/openai/codex) fork. It pulled
+upstream, applied semantic patch sets with
+[ast-grep](https://ast-grep.github.io/) and
+[coccinelle-for-rust](https://github.com/coccinelle/coccinelle) rules, tracked
+everything in a JSON patch registry, and rebuilt — so a fork could be kept
+current and re-customized in one command.
+
+## Features
+
+- **Vendored upstream** — `openai/codex` pinned as a git submodule under
+  `vendor/codex`; the pipeline always mutates exactly the code you see
+- **Semantic patch engines** — ast-grep (enabled) and coccinelle-for-rust
+  (opt-in) apply structural rules, not brittle line diffs
+- **Patch registry** — `patch-registry/registry.json` is the single source of
+  truth: list, explain, enable, and disable patch sets by id
+  (e.g. `astgrep:increase-max-output-tokens`) — never edit JSON by hand
+- **Legacy patch import** — timestamped `git-apply` patches under
+  `patches/textual/` carry forward historical fixes
+- **Fork-aware guardrails** — treat the vendor tree as a fork: require a clean
+  worktree, fetch-only upstream remote, abort on divergence instead of
+  clobbering local work
+- **Safe by default** — `--dry-run` reports without writing, `--json` emits a
+  machine-readable summary, `doctor` checks the environment first
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[upstream openai/codex] -->|fetch| V[vendor/codex submodule]
+    V --> G{fork guardrails<br/>clean tree? diverged?}
+    G -->|ok| A[ast-grep rules<br/>rules/ast-grep]
+    G -->|ok| C[coccinelle rules<br/>rules/coccinelle]
+    A --> R[patch registry<br/>patch-registry/registry.json]
+    C --> R
+    R --> L[legacy patches<br/>patches/textual/*.patch]
+    L --> B[cargo build]
+    B --> J[--json summary]
+```
+
+## Quick start
+
+```bash
+git clone --recurse-submodules https://github.com/toxicwind/codex-patcher-updater.git
+cd codex-patcher-updater
+cargo run -- doctor                    # check tools + vendor state
+cargo run -- update --dry-run          # preview: pull, patch, build plan
+cargo run -- update                    # pull upstream, apply patches, build
+```
 
 ## CLI
 
 ```
-cargo run --bin codex-forksmith -- status   # branch, divergence, binary path
-cargo run --bin codex-forksmith -- sync     # fetch + fast-forward to upstream
-cargo run --bin codex-forksmith -- build    # cargo build --profile release
-cargo run --bin codex-forksmith -- run -- <args passed to codex>
+codex-patcher-updater [--root .] <COMMAND>
+
+  update      Pull upstream, apply patches, update registry, and build
+  doctor      Check environment, tools, and vendor repo state
+  registry    Registry management commands
 ```
 
-`status` inspects `vendor/codex` and prints:
+`update` flags: `--dry-run` · `--skip-build` · `--no-ast` · `--no-cocci` ·
+`--json`
 
-- current branch, HEAD, and cleanliness
-- ahead/behind counts vs `origin/<branch>` and `upstream/<branch>`
-- whether the configured Codex binary exists
+```bash
+cargo run -- registry list                                  # patch sets
+cargo run -- registry explain astgrep:increase-max-output-tokens
+cargo run -- registry disable astgrep:increase-max-output-tokens
+cargo run -- update --json > update-summary.json             # CI-friendly
+```
 
-`sync` fetches the configured `local_remote` and `upstream_remote`, requires a
-clean tree, then fast-forwards the working tree to the upstream ref. Any output
-clearly calls out when the local remote still needs a push.
+## Architecture
 
-`build` runs `cargo build --profile <profile>` inside `vendor/codex` and
-verifies the binary defined by `binary_relpath` exists before returning.
-
-`run -- …` executes that binary with passthrough stdin/stdout/stderr, so you can
-chain Codex invocations from scripts or AGENTS. It bails with a clear message if
-the binary has not been built yet.
-
-The legacy registry/patch pipeline still lives behind
-`cargo run --bin codex-forksmith-legacy -- <command>` for historical reference,
-but the default toolchain is the new fork-aware CLI described above.
-
-- `update` resets `vendor/codex`, loads the patch registry, runs ast-grep/cocci
-  rules, updates registry metadata, optionally runs `cargo build --release`, and
-  prints a machine-readable JSON summary with `--json`.
-- `doctor` reports workspace health (vendor presence, registry path, rule counts).
-- `registry` commands are the single source of truth for toggling semantic patch
-  sets so you never edit JSON manually.
-
-The repository already vendors upstream under `vendor/codex` via a git submodule
-pointing at `github.com/openai/codex`, so you always see the exact code the
-pipeline mutates.
-
-## Workspace layout
-
-This repo now owns the entire Rust toolchain that used to live in `~/crates`.
-Running `cargo metadata` shows the extra crates under `crates/`:
-
-| Crate | Purpose |
+| Path | Role |
 | --- | --- |
-| `codex-ast-driver` / `codex-cocci-driver` | Hermetic adapters for ast-grep and coccinelle-for-rust. |
-| `codex-core` | Future orchestration layer that stitches drivers + registry + packaging. |
-| `codex-registry` | JSON registry helpers (the CLI still uses the bespoke format but this gives us a migration path). |
-| `codex-pkg` | Zip/packaging helper used by the experimental `codex-core`. |
-| `codex-updater-cli` | Reference CLI wiring on top of `codex-core` (kept for experimentation). |
-| `codex-wrapper` | Pure-Rust wrapper that can replace the Bash launcher under `~/.config/bash/hypebrut/bin/hb/codex`. |
-
-You can build everything in one pass with `cargo build --workspace`. The
-existing `codex-forksmith` binary remains the source of truth today; the
-additional crates are vendored here so we can progressively migrate features
-into them without juggling multiple repositories.
+| `src/main.rs` | clap CLI: `update`, `doctor`, `registry` subcommands |
+| `src/runner.rs` | Orchestration — pull, patch, registry update, build |
+| `src/engines/` | Engine adapters: `ast_grep.rs`, `coccinelle.rs`, `patch.rs` (git-apply) |
+| `src/registry.rs` | JSON registry load/save, enable/disable, explain |
+| `src/config.rs` | `codex-patcher-updater.toml` parsing with defaults |
+| `vendor/codex` | Submodule: upstream `openai/codex` under management |
+| `rules/ast-grep/` · `rules/coccinelle/` | Semantic rules, e.g. `increase_max_output_tokens.yml` |
+| `patches/textual/` | Legacy timestamped `.patch` files applied via git-apply |
+| `patch-registry/registry.json` | Patch-set state: id, engine, rules, enabled, last run |
 
 ## Configuration
 
-`codex-forksmith.toml` configures the workspace:
+`codex-patcher-updater.toml` — every field optional, defaults match this layout:
 
 ```toml
-[workspace]
-root = "."
+[vendor]
+root = "vendor/codex"          # vendored repo path, relative to workspace root
+branch = "main"
 
-[repo]
-path = "vendor/codex"
-local_remote = "origin"
+[tools]
+ast_grep = "ast-grep"          # set to "sg" if you prefer the short alias
+coccinelle = "coccinelle-for-rust"   # optional; only if installed
+
+[patch_registry]
+path = "patch-registry/registry.json"
+
+[patches]
+rules_root = "rules"
+
+[engines]
+ast_grep = true
+coccinelle = false
+gritql = false
+
+[fork]
+enabled = false                # treat vendor/codex as a fork, not a reset target
+local_remote = "origin"        # your writable fork
 local_branch = "main"
-upstream_remote = "upstream"
+upstream_remote = "upstream"   # fetch-only
 upstream_branch = "main"
-
-[build]
-profile = "release"
-workspace = "codex-rs"
-binary_relpath = "codex-rs/target/release/codex"
+require_clean_worktree = true
+abort_on_divergence = true     # abort instead of warning when remotes are ahead
+auto_merge_upstream = false
 ```
 
-All fields are optional; sensible defaults match the layout in this repo. If
-you track a different fork branch or build profile, tweak those values and the
-CLI will respect them.
+## Development
+
+Requires the pinned nightly toolchain (`rust-toolchain.toml` pins nightly with
+`rustfmt` + `clippy`):
+
+```bash
+cargo build            # debug build of codex-patcher-updater
+cargo clippy -- -D warnings
+cargo fmt --check
+```
+
+Rules live under `rules/` and are plain ast-grep YAML / coccinelle `.cocci`
+files — add a rule file, register it as a patch set, and `update --dry-run`
+will show you exactly what it matches before anything is written.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Security
+
+This tool rewrites vendored upstream source. Review every rule under `rules/`
+and every patch under `patches/textual/` before running `update` against a
+tree you care about — semantic patches are powerful and a bad rule can
+silently change behavior. The fork guardrails (`require_clean_worktree`,
+`abort_on_divergence`) exist to stop the pipeline before it touches a dirty or
+diverged tree; leave them on.
